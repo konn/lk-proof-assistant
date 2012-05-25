@@ -1,5 +1,6 @@
-{-# LANGUAGE DeriveDataTypeable, RecordWildCards, FlexibleInstances #-}
-{-# LANGUAGE GADTs, TypeOperators, EmptyDataDecls, TypeFamilies #-}
+{-# LANGUAGE DeriveDataTypeable, RecordWildCards, FlexibleInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE GADTs, TypeOperators, EmptyDataDecls, TypeFamilies, ScopedTypeVariables, FunctionalDependencies, FlexibleContexts, UndecidableInstances #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 -- {-# LANGUAGE DataKinds #-}
 module SequentTypes where
 import Text.Parsec.Expr
@@ -69,6 +70,93 @@ isGreek = (`elem` (letters ++ map toLower letters))
   where
     letters = "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΞΨΩ"
 greek = satisfy isGreek
+
+class HasArity a where
+  arity :: a -> Int
+
+instance HasArity Nil where
+  arity _ = 0
+
+instance HasArity as => HasArity (a :- as) where
+  arity (_ :: a :- as) = 1 + arity (undefined :: as)
+
+instance HasArity ([Sequent] -> [Sequent]) where
+  arity _ = 0
+
+instance HasArity as => HasArity (a -> as) where
+  arity (_ :: a -> as) = 1 + arity (undefined :: as)
+
+forwardArity :: HasArity as => Rule as bs -> Int
+forwardArity (_ :: Rule as bs) = arity (undefined :: as)
+
+backwardArity :: HasArity bs => Rule as bs -> Int
+backwardArity (_ :: Rule as bs) = arity (undefined :: bs)
+
+data Z
+data S n
+
+data Vector a len where
+  VNil  :: Vector a Z
+  VCons :: a -> Vector a n -> Vector a (S n)
+
+class ListToVector len where
+  listToVector :: [a] -> Maybe (Vector a len)
+
+instance ListToVector Z where
+  listToVector [] = Just VNil
+  listToVector _  = Nothing
+
+instance ListToVector n => ListToVector (S n) where
+  listToVector (x:xs) = VCons x <$> (listToVector xs)
+  listToVector []     = Nothing
+
+class ApplyVec len xs | len -> xs where
+  applyVec :: (xs :~> a) -> Vector String len -> a
+
+instance ApplyVec Z Nil where
+  applyVec f VNil = f
+
+instance (Read x, ApplyVec len xs) => ApplyVec (S len) (x :- xs) where
+  applyVec f (VCons x xs) = applyVec (f $ read x) xs
+
+unapplyList :: (ListToVector (Length b), ApplyVec (Length b) b)
+            => Rule a b -> [String] -> Maybe ([Sequent] -> [Sequent])
+unapplyList (Rule _ _ f :: Rule as bs) xs =
+    applyVec f <$> (listToVector xs :: Maybe (Vector String (Length bs)))
+
+applyList :: (ListToVector (Length as), ApplyVec (Length as) as)
+          => Rule as b -> [String] -> Maybe ([Sequent] -> [Sequent])
+applyList (Rule _ f _ :: Rule as bs) xs =
+    applyVec f <$> (listToVector xs :: Maybe (Vector String (Length as)))
+
+type family   Length as
+type instance Length Nil = Z
+type instance Length (a :- as) = S (Length as)
+
+class RuleArgument a where
+  toArg :: [Formula] -> String -> Maybe a
+
+instance RuleArgument Int where
+  toArg fs str = maybe formulaRange Just index
+    where
+      index = 
+        case reads str of
+          [(i, "")] -> Just i
+          _         -> Nothing
+      formulaRange
+          | Right prfx <- parse (parens $ formula `sepBy` comma) "" str
+          , prfx `isPrefixOf` fs = Just $ length prfx
+          | otherwise = Nothing
+instance RuleArgument Formula where
+  toArg _ str = either (const Nothing) Just $ parse formula "" str
+
+{-
+unApplyVector :: (Read b, Length bs ~ n)
+              => Vector String (S n)
+              -> Rule as (b :- bs)
+              -> (Vector String n, Rule as bs)
+unApplyVector (VCons a as) (Rule name app unapp) = (as, Rule name app (unapp $ read a))
+-}
 
 lang :: T.LanguageDef ()
 lang = T.LanguageDef { T.commentStart = "{-"
