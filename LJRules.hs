@@ -1,6 +1,6 @@
 {-# LANGUAGE QuasiQuotes, UnicodeSyntax #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns -fwarn-unused-imports #-}
-module LKRules where
+module LJRules where
 import SequentTypes
 import SequentMacros
 
@@ -10,41 +10,28 @@ isInitial [lkseq| a |- b |] = a == b
 [rule|
 # Permutation
   Γ, A, B, Σ ├ Δ
--------------------- permutationL
+-------------------- permutation
   Γ, B, A, Σ ├ Δ
 
-  Γ ├ Δ, A, B, Π
--------------------- permutationR
-  Γ ├ Δ, B, A, Π 
-
 # Cut
-  Γ |- Δ, A   A, Σ |- Π
+  Γ |- A   A, Σ |- Π
 --------------------------- cut
-       Γ, Σ |- Δ, Π
+       Γ, Σ |- Π
 
 # Contraction
  A, A, Γ |- Δ
---------------- contractL
+--------------- contract
     A, Γ |- Δ
-
- Γ |- Δ, A, A
---------------- contractR
- Γ |- Δ, A
-
 
 # Weakening
     Γ ├ Δ
-------------- weakenL
+------------- weaken
  A, Γ ├ Δ
 
- Γ ├ Δ
-------------- weakenR
- Γ ├ Δ, A
-
 # Rules for AND
- Γ ├ Δ, A   Σ ├ Π, B
+ Γ ├ A   Σ ├ B
 -------------------------- andRight
-  Γ, Σ ├ Δ, Π, A ∧ B
+  Γ, Σ ├ A ∧ B
 
       A, Γ ├ Δ
 ------------------ andLeftR
@@ -55,33 +42,33 @@ isInitial [lkseq| a |- b |] = a == b
   B ∧ A, Γ ├ Δ
 
 # Rules for OR
- A, Γ ├ Δ   B, Σ |- Π
+ A, Γ ├ Δ   B, Σ |- Δ
 -------------------------- orLeft
-  A ∨ B, Γ, Σ |- Δ, Π
+  A ∨ B, Γ, Σ |- Δ
 
- Γ ├ Δ, A
+ Γ ├ A
 ---------------- orRightR
- Γ ├ Δ, A ∨ B
+ Γ ├ A ∨ B
 
- Γ ├ Δ, A
+ Γ ├ A
 ---------------- orRightL
- Γ ├ Δ, B ∨ A
+ Γ ├ B ∨ A
 
 # Rules for Implies
-  A, Γ ├ Δ, B
--------------------------- implRight
-     Γ ├ Δ, A → B
+  A, Γ ├ B
+------------------ implRight
+     Γ ├ A → B
 
-  Γ ├ Δ, A   B, Σ ├ Π
---------------------------- implLeft
-  A → B , Γ, Σ ├ Δ, Π
+  Γ ├ A   B, Σ ├ Π
+----------------------- implLeft
+  A → B , Γ, Σ ├ Π
 
 # Rules for Not
- A, Γ ├ Δ
+ A, Γ ├ 
 ------------------- notRight
-    Γ ├ Δ, ¬ A
+    Γ ├ ¬ A
 
-      Γ ├ Δ, A
+      Γ ├ A
 ------------------ notLeft
- ¬ A, Γ ├ Δ
+ ¬ A, Γ ├ 
 |]
