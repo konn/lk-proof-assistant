@@ -2,7 +2,7 @@
 {-# LANGUAGE GADTs, TypeOperators, EmptyDataDecls, TypeFamilies, ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts, UndecidableInstances, FunctionalDependencies #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-{-# LANGUAGE DataKinds, PolyKinds #-}
+-- {-# LANGUAGE DataKinds #-}
 module SequentTypes where
 import Text.Parsec.Expr
 import Text.Parsec
@@ -29,13 +29,23 @@ data Formula = Var String
 data Sequent = (:|-) { lefts :: [Formula], rights :: [Formula] }
              deriving (Eq, Ord, Data, Typeable)
 
+{-
 -- For GHC 7.4.*
 type family   (:~>) (a :: [*]) (f :: *)
 type instance '[] :~> f = f
 type instance (a ': b) :~> f = a -> b :~> f
+-}
+
+data Nil
+data a :- b
+
+type family   (:~>) a f
+type instance Nil :~> f = f
+type instance (a :- b) :~> f = a -> b :~> f
 
 infixr :~>
-data Rule :: [*] -> [*] -> * where
+-- data Rule (as :: [*]) (bs :: [*]) where
+data Rule as bs where
   Rule :: { ruleName :: String
           , apply   :: as :~> ([Sequent] -> [Sequent])
           , unapply  :: bs :~> ([Sequent] -> [Sequent])}
@@ -61,7 +71,8 @@ isGreek = (`elem` (letters ++ map toLower letters))
     letters = "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΞΨΩ"
 greek = satisfy isGreek
 
-data Nat = Z | S Nat
+data Z
+data S n
 
 data Vector a len where
   VNil  :: Vector a Z
@@ -81,10 +92,10 @@ instance ListToVector n => ListToVector (S n) where
 class ApplyVec len xs | len -> xs where
   applyVec :: (xs :~> a) -> [Sequent] -> Vector String len -> Maybe a
 
-instance ApplyVec Z '[] where
+instance ApplyVec Z Nil where
   applyVec f _ VNil = Just f
 
-instance (RuleArgument x, ApplyVec len xs) => ApplyVec (S len) (x ': xs) where
+instance (RuleArgument x, ApplyVec len xs) => ApplyVec (S len) (x :- xs) where
   applyVec f s (VCons x xs) =
       case f <$> toArg s x of
         Just f' -> applyVec f' s xs
@@ -100,29 +111,28 @@ applyList :: (ListToVector (Length as), ApplyVec (Length as) as)
 applyList (Rule _ f _ :: Rule as bs) xs ss =
     applyVec f ss =<< (listToVector xs :: Maybe (Vector String (Length as)))
 
-data Proxy a = Proxy
+class ToInt a where
+  toInt :: a -> Int
 
-class ToInt (a :: Nat) where
-  toInt :: Proxy a -> Int
-
-instance ToInt 'Z where
+instance ToInt Z where
   toInt _ = 0
 
-instance ToInt n => ToInt ('S n) where
-  toInt Proxy = toInt (Proxy :: Proxy n) + 1
+instance ToInt n => ToInt (S n) where
+  toInt (_ :: S n) = toInt (undefined :: n) + 1
 
-type family   Length (as :: [*]) :: Nat
-type instance Length '[] = Z
-type instance Length (a ': as) = S (Length as)
+type family   Length as
+type instance Length Nil = Z
+type instance Length (a :- as) = S (Length as)
 
-data Index (nth :: Nat) (side :: Side) = Index { runIndex :: Int }
-data Side = LHS | RHS
+data Index nth side = Index { runIndex :: Int }
+data LHS
+data RHS
 
 class RuleArgument a where
   toArg :: [Sequent] -> String -> Maybe a
 
 instance ToInt n => RuleArgument (Index n LHS) where
-  toArg fs str = maybe (formulaRange $ toInt (Proxy :: Proxy n)) Just index
+  toArg fs str = maybe (formulaRange $ toInt (undefined :: n)) Just index :: Maybe (Index n LHS)
     where
       index = 
         case reads str of
@@ -135,7 +145,8 @@ instance ToInt n => RuleArgument (Index n LHS) where
           | otherwise = Nothing
 
 instance ToInt n => RuleArgument (Index n RHS) where
-  toArg fs str = maybe (formulaRange $ toInt (Proxy :: Proxy n)) Just index
+  toArg fs str = maybe (formulaRange $ toInt (undefined :: n)) Just index
+               :: Maybe (Index n RHS)
     where
       index = 
         case reads str of

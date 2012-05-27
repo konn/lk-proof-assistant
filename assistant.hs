@@ -7,6 +7,7 @@ import Text.Parsec
 import Control.Monad.Writer
 import Control.Applicative
 import Data.List
+import System.IO
 
 main :: IO ()
 main = getLine >>= proof . run sequent >>= print
@@ -19,22 +20,19 @@ prover s@[lkseq| a |- b |] | a == b = liftIO $ putStrLn $ "complete: " ++ show s
 prover fm = do
   liftIO $ putStrLn "----------------------"
   liftIO $ putStrLn $ "Goal: " ++ show fm
-  liftIO $ putStr "> "
+  liftIO $ putStr "> " >> hFlush stdout
   cmd <- liftIO getLine
   let rule =
         case words cmd of
-          ("cut":a:i:j:_)
-            | [lkseq| as |- gs |] <- fm -> unapply cut <$> toArg as a <*> toArg as i <*> toArg gs j
-          ("permutationL":i:_)
-            | [lkseq| as |- gs |] <- fm -> unapply permutationL <$> toArg as i
-          ("permutationR":i:_)
-            | [lkseq| as |- gs |] <- fm -> unapply permutationR <$> toArg gs i
-          ("contractL":_) -> Just $ unapply contractL
+          ("cut":args) -> unapplyList cut args [fm]
+          ("permutationL":args) -> unapplyList permutationL args [fm]
+          ("permutationR":rest) -> unapplyList permutationR rest [fm]
+          ("contractL":rest) -> unapplyList contractL rest [fm]
           ("contractR":_) -> Just $ unapply contractR
           ("weakenL":_) -> Just $ unapply weakenL
           ("weakenR":_) -> Just $ unapply weakenR
-          ("andRight":i:j:_)
-            | [lkseq| as |- gs, a ∧ b |] <- fm -> unapply andRight <$> toArg as i <*> toArg gs j
+          ("andRight":args)
+            | [lkseq| as |- gs, a ∧ b |] <- fm -> unapplyList andRight args [seqs| as |- gs |]
           ("andLeftR":_) -> Just $ unapply andLeftR
           ("andLeftL":_) -> Just $ unapply andLeftL
           ("leftR":_) -> Just $ unapply andLeftR
@@ -43,30 +41,27 @@ prover fm = do
           ("rightL":_) -> Just $ unapply orRightL
           ("orRightR":_) -> Just $ unapply orRightR
           ("orRightL":_) -> Just $ unapply orRightL
-          ("orLeft":i:j:_)
-            | [lkseq| a ∨ b, as |- gs |] <- fm -> unapply orLeft <$> toArg as i <*> toArg gs j
+          ("orLeft":args)
+            | [lkseq| a ∨ b, as |- gs |] <- fm -> unapplyList orLeft args [fm]
           ("implRight":_) -> Just $ unapply implRight
-          ("implLeft":i:j:_)
-            | [lkseq| a → b, as |- gs |] <- fm -> unapply implLeft <$> toArg as i <*> toArg gs j
+          ("implLeft":args)
+            | [lkseq| a → b, as |- gs |] <- fm -> unapplyList implLeft args [fm]
           ("notLeft":_) -> Just $ unapply notLeft
           ("notRight":_) -> Just $ unapply notRight
           ("left":rest)
             | [lkseq| ¬ a, as |- gs |] <- fm -> Just $ unapply notLeft
-            | [lkseq| a → b, as |- gs |] <- fm
-            , (i:j:_) <- rest -> unapply implLeft <$> toArg as i <*> toArg gs j
-            | [lkseq| a ∨ b, as |- gs |] <- fm
-            , (i:j:_) <- rest -> unapply orLeft <$> toArg as i <*> toArg gs j
-            | [lkseq| as |- gs, a ∧ b |] <- fm
-            , (lhs:_) <- rest
-            , run formula lhs == a -> Just $ unapply andLeftL
-            | [lkseq| as |- gs, a ∧ b |] <- fm
+            | [lkseq| a → b, as |- gs |] <- fm -> unapplyList implLeft rest [seqs| as |- gs |]
+            | [lkseq| a ∨ b, as |- gs |] <- fm -> unapplyList orLeft rest [seqs| as |- gs |]
+            | [lkseq| a ∧ b, as |- gs |] <- fm
             , (rhs:_) <- rest
             , run formula rhs == b -> Just $ unapply andLeftR
+            | [lkseq| a ∧ b, as |- gs |] <- fm
+            , (rhs:_) <- rest
+            , run formula rhs == a -> Just $ unapply andLeftL
           ("right":rest)
             | [lkseq| as |- gs, ¬ a |] <- fm -> Just $ unapply notRight
             | [lkseq| as |- gs, a → b |] <- fm -> Just $ unapply implRight
-            | [lkseq| as |- gs, a ∧ b |] <- fm
-            , (i:j:_) <- rest -> unapply andRight <$> toArg as i <*> toArg gs j
+            | [lkseq| as |- gs, a ∧ b |] <- fm -> unapplyList andRight rest [seqs| as |- gs |]
             | [lkseq| as |- gs, a ∨ b |] <- fm
             , (lhs:_) <- rest
             , run formula lhs == a -> Just $ unapply orRightL

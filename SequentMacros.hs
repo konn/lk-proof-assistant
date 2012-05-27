@@ -73,8 +73,7 @@ rule = QuasiQuoter { quoteType = undefined
                    }
 
 mkHList :: [TypeQ] -> TypeQ
--- mkHList = foldr (appT . appT (conT '(:))) (conT '[]) -- for GHC 7.4.*
-mkHList = foldr (appT . appT [t| (:-) |]) [t| Nil |]
+mkHList = foldr (appT . appT (conT '(:))) (conT '[]) -- for GHC 7.4.*
 
 ruleDec :: String -> Q [Dec]
 ruleDec str = do
@@ -91,16 +90,16 @@ ruleDec str = do
       return [sig, fun]
     arrow a b = [t| $(a) -> $(b) |]
     build from name to = do
-      (is, pattern, guards) <- compilePattern from
+      (types, is, pattern, guards) <- compilePattern from
       body    <- dataToExpQ (mkQ Nothing expq) to
       let pnames = nub $ everything (++) (mkQ [] extractName) from
           enames = nub $ everything (++) (mkQ [] extractName) to
           unknown = map mkName $ enames \\ pnames
-          ts = map (const [t| Formula |]) unknown ++ map (const [t| Int |]) is
-      funApp <- funD (mkName name) [ clause (map varP (unknown++is) ++[pattern])
+          ts = map (const [t| Formula |]) unknown ++ types
+      funApp <- funD (mkName name) [ clause (map varP unknown++map (conP 'Index . pure . varP) is ++[pattern])
                                              (guardedB [liftM2 (,) (patG guards) $ return body])
                                              []
-                                , clause (wildP:map (const wildP) (unknown ++ is)) (normalB [| [] |]) []
+                                , clause (wildP:map (const wildP) (unknown ++is)) (normalB [| [] |]) []
                                 ]
       return (ts, funApp)
     expq :: [Formula] -> Maybe ExpQ
@@ -135,18 +134,22 @@ allEq xs = and $ zipWith (==) xs $ tail xs
 
 type ExtMap = M.Map String (Maybe Name, [String])
 
-compilePattern :: [Sequent] -> Q ([Name], PatQ, [StmtQ])
+compilePattern :: [Sequent] -> Q ([TypeQ], [Name], PatQ, [StmtQ])
 compilePattern sqs = do
-  (unzip3 -> (nns, pats, sss), dic) <- runStateT (mapM extractSequent sqs) M.empty
+  (unzip4 -> (tps, names, pats, sss), dic) <- runStateT (mapM extractSequent sqs) M.empty
   let overlaps = filter (not . null . drop 1) $ map (snd . snd) $ M.toList dic
       conds    = map (noBindS . appE [| allEq |] . listE . map (varE . mkName)) overlaps
-  return (concat nns, listP pats, concat sss ++ conds)
+      appIndex a b = [t| Index $a $b |]
+      tNums = iterate (appT [t| 'S |]) [t| 'Z |]
+      types = concat $ zipWith (map . appIndex) (take (length tps) tNums) tps
+  return (types, concat names, listP pats, concat sss ++ conds)
 
-extractSequent :: Sequent -> StateT ExtMap Q ([Name], PatQ, [StmtQ])
+extractSequent :: Sequent -> StateT ExtMap Q ([TypeQ], [Name], PatQ, [StmtQ])
 extractSequent (ls :|- rs) = do
   (is, lsPat, gs) <- extractFromFormulae ls
   (is', rsPat, gs') <- extractFromFormulae rs
-  return (is ++ is', infixP lsPat '(:|-) rsPat, gs ++ gs')
+  return (map (const $ conT 'LHS) is ++ map (const $ conT 'RHS) is', is ++ is'
+         , infixP lsPat '(:|-) rsPat, gs ++ gs')
 
 extractFromFormulae :: [Formula] -> StateT (M.Map String (Maybe Name, [String])) Q ([Name], PatQ, [StmtQ])
 extractFromFormulae fs = do
