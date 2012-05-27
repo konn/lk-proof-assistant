@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable, RecordWildCards, FlexibleInstances, MultiParamTypeClasses #-}
 {-# LANGUAGE GADTs, TypeOperators, EmptyDataDecls, TypeFamilies, ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleContexts, UndecidableInstances, FunctionalDependencies #-}
+{-# LANGUAGE FlexibleContexts, FunctionalDependencies, UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 -- {-# LANGUAGE DataKinds #-}
 module SequentTypes where

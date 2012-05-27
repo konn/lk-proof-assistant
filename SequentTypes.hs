@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable, RecordWildCards, FlexibleInstances, MultiParamTypeClasses #-}
 {-# LANGUAGE GADTs, TypeOperators, EmptyDataDecls, TypeFamilies, ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleContexts, UndecidableInstances, FunctionalDependencies #-}
+{-# LANGUAGE FlexibleContexts, UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE DataKinds, PolyKinds #-}
 module SequentTypes where
@@ -78,17 +78,21 @@ instance ListToVector n => ListToVector (S n) where
   listToVector (x:xs) = VCons x <$> (listToVector xs)
   listToVector []     = Nothing
 
-class ApplyVec len xs | len -> xs where
+class (List len ~ xs) => ApplyVec len xs where
+  type List (len :: Nat) :: [*]
   applyVec :: (xs :~> a) -> [Sequent] -> Vector String len -> Maybe a
 
 instance ApplyVec Z '[] where
+  type List Z = '[]
   applyVec f _ VNil = Just f
 
 instance (RuleArgument x, ApplyVec len xs) => ApplyVec (S len) (x ': xs) where
+  type List (S len) = List (S len)
   applyVec f s (VCons x xs) =
       case f <$> toArg s x of
         Just f' -> applyVec f' s xs
         Nothing -> Nothing
+
 
 unapplyList :: (ListToVector (Length b), ApplyVec (Length b) b)
             => Rule a b -> [String] -> [Sequent] -> Maybe ([Sequent] -> [Sequent])
@@ -99,6 +103,7 @@ applyList :: (ListToVector (Length as), ApplyVec (Length as) as)
           => Rule as b -> [String] -> [Sequent] -> Maybe ([Sequent] -> [Sequent])
 applyList (Rule _ f _ :: Rule as bs) xs ss =
     applyVec f ss =<< (listToVector xs :: Maybe (Vector String (Length as)))
+
 
 data Proxy a = Proxy
 
