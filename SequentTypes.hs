@@ -1,8 +1,8 @@
-{-# LANGUAGE DeriveDataTypeable, RecordWildCards, FlexibleInstances, MultiParamTypeClasses #-}
-{-# LANGUAGE GADTs, TypeOperators, EmptyDataDecls, TypeFamilies, ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleContexts, UndecidableInstances #-}
+{-# LANGUAGE FlexibleContexts, UndecidableInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE DeriveDataTypeable, RecordWildCards, FlexibleInstances #-}
+{-# LANGUAGE GADTs, TypeOperators, EmptyDataDecls, TypeFamilies #-}
+{-# LANGUAGE DataKinds, PolyKinds, ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-{-# LANGUAGE DataKinds, PolyKinds #-}
 module SequentTypes where
 import Text.Parsec.Expr
 import Text.Parsec
@@ -93,7 +93,6 @@ instance (RuleArgument x, ApplyVec len xs) => ApplyVec (S len) (x ': xs) where
         Just f' -> applyVec f' s xs
         Nothing -> Nothing
 
-
 unapplyList :: (ListToVector (Length b), ApplyVec (Length b) b)
             => Rule a b -> [String] -> [Sequent] -> Maybe ([Sequent] -> [Sequent])
 unapplyList (Rule _ _ f :: Rule as bs) xs ss =
@@ -103,7 +102,6 @@ applyList :: (ListToVector (Length as), ApplyVec (Length as) as)
           => Rule as b -> [String] -> [Sequent] -> Maybe ([Sequent] -> [Sequent])
 applyList (Rule _ f _ :: Rule as bs) xs ss =
     applyVec f ss =<< (listToVector xs :: Maybe (Vector String (Length as)))
-
 
 data Proxy a = Proxy
 
@@ -154,14 +152,6 @@ instance ToInt n => RuleArgument (Index n RHS) where
 
 instance RuleArgument Formula where
   toArg _ str = either (const Nothing) Just $ parse formula "" str
-
-{-
-unApplyVector :: (Read b, Length bs ~ n)
-              => Vector String (S n)
-              -> Rule as (b :- bs)
-              -> (Vector String n, Rule as bs)
-unApplyVector (VCons a as) (Rule name app unapp) = (as, Rule name app (unapp $ read a))
--}
 
 lang :: T.LanguageDef ()
 lang = T.LanguageDef { T.commentStart = "{-"
