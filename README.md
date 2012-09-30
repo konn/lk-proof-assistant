@@ -47,4 +47,4 @@ complete: P |- P
 Output tex code can be compiled with [bussproofs.sty](http://www.math.ucsd.edu/~sbuss/ResearchWeb/bussproofs/index.html).
 Above example generates following proof tree.
 
-![](proof-tree.jpg)
+![](lk-proof-assistant/proof-tree.jpg)
