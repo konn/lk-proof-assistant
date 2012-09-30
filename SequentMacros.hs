@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell, ViewPatterns #-}
+{-# LANGUAGE TemplateHaskell, ViewPatterns, PatternGuards #-}
 module SequentMacros where
 import SequentTypes
 import Language.Haskell.TH

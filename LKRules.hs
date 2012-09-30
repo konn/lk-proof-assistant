@@ -1,4 +1,4 @@
-{-# LANGUAGE QuasiQuotes, UnicodeSyntax, TypeOperators, DataKinds #-}
+{-# LANGUAGE QuasiQuotes, UnicodeSyntax, TypeOperators, DataKinds, PatternGuards #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns -fwarn-unused-imports #-}
 module LKRules where
 import SequentTypes

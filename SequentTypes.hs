@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts, UndecidableInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleContexts, UndecidableInstances, MultiParamTypeClasses, PatternGuards #-}
 {-# LANGUAGE DeriveDataTypeable, RecordWildCards, FlexibleInstances, TupleSections#-}
 {-# LANGUAGE GADTs, TypeOperators, EmptyDataDecls, TypeFamilies, ConstraintKinds #-}
 {-# LANGUAGE DataKinds, PolyKinds, ScopedTypeVariables, TemplateHaskell #-}

@@ -2,7 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses, OverloadedStrings, PatternGuards #-}
 {-# LANGUAGE QuasiQuotes, TupleSections, UndecidableInstances        #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-module Rewind where
+module Main where
 import           Control.Applicative
 import           Control.Monad.CC
 import           Control.Monad.Writer
