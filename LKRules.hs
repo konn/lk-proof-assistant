@@ -1,8 +1,9 @@
-{-# LANGUAGE QuasiQuotes, UnicodeSyntax #-}
+{-# LANGUAGE QuasiQuotes, UnicodeSyntax, TypeOperators, DataKinds #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns -fwarn-unused-imports #-}
 module LKRules where
 import SequentTypes
 import SequentMacros
+import NAry
 
 isInitial :: Sequent -> Bool
 isInitial [lkseq| a |- b |] = a == b
@@ -85,3 +86,47 @@ isInitial [lkseq| a |- b |] = a == b
 ------------------ notLeft
  ¬ A, Γ ├ Δ
 |]
+
+anyLeft :: Rule '[String, String] '[String]
+anyLeft = Rule "$\\forall$-Left" (toNAry app) (toNAry unapp)
+  where
+    app old new [(f : gs) :|- ds] =
+        [ (Forall new (replaceFreeVarWith old new f) : gs) :|- ds]
+    app _ _ _ = []
+    unapp new [(Forall x f : gs) :|- ds] =
+        [ (replaceFreeVarWith x new f : gs) :|- ds]
+    unapp _ _ = []
+
+anyRight :: Rule '[String, String] '[String]
+anyRight = Rule "$\\forall$-Left" (toNAry app) (toNAry unapp)
+  where
+    app old new [ gs :|- (f : ds)]
+        | not (any (new `isFreeIn`) $ gs ++ ds)
+        = [ gs :|- (Forall new (replaceFreeVarWith old new f) : ds)]
+    app _ _ _ = []
+    unapp new [ gs :|- (Forall x f : ds)]
+        | not (any (new `isFreeIn`) (Forall x f : gs ++ ds))
+        = [ gs :|- (replaceFreeVarWith x new f : ds)]
+    unapp _ _ = []
+
+existsRight :: Rule '[String, String] '[String]
+existsRight = Rule "$\\exists$-Right" (toNAry app) (toNAry unapp)
+  where
+    app old new [gs :|- (f : ds)] =
+        [ gs :|- (Exists new (replaceFreeVarWith old new f) : ds)]
+    app _ _ _ = []
+    unapp new [gs :|- (Exists x f : ds)] =
+        [ gs :|- (replaceFreeVarWith x new f : ds)]
+    unapp _ _ = []
+
+existsLeft :: Rule '[String, String] '[String]
+existsLeft = Rule "$\\exists$-Left" (toNAry app) (toNAry unapp)
+  where
+    app old new [ (f : gs) :|- ds]
+        | not (any (new `isFreeIn`) $ gs ++ ds)
+        = [(Exists new (replaceFreeVarWith old new f) : gs) :|- ds]
+    app _ _ _ = []
+    unapp new [ (Exists x f : gs) :|- ds ]
+        | not (any (new `isFreeIn`) (Exists x f : gs ++ ds))
+        = [ (replaceFreeVarWith x new f : gs) :|- ds]
+    unapp _ _ = []

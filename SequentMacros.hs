@@ -13,6 +13,8 @@ import Data.Foldable (foldrM)
 import Control.Monad.State
 import qualified  Data.Map as M
 
+import NAry
+
 lkseq :: QuasiQuoter
 lkseq = QuasiQuoter { quoteType = undefined
                     , quoteDec  = undefined
@@ -20,17 +22,21 @@ lkseq = QuasiQuoter { quoteType = undefined
                     , quotePat  = lkSeqPat
                     }
 
+lkSeqExp :: String -> Q Exp
+seqsExp :: String -> Q Exp
 lkSeqExp str = dataToExpQ (mkQ Nothing anti) $ parseSequent str
   where
     anti :: [Formula] -> Maybe ExpQ
     anti gs = Just [| concat $(listE $ map (appE [| toFormulaList |] . dataToExpQ (mkQ Nothing trans)) gs) |]
-    trans (Var s) | isFree s = Just $ varE (mkName s)
+    trans (Var xs s) | isFree s = Just $ varE (mkName s)
     trans _ = Nothing
 lkSeqPat str = dataToPatQ (mkQ Nothing anti) $ parseSequent str
   where
     anti :: [Formula] -> Maybe PatQ
     anti fs = Just $ foldr1 (\a b -> infixP a ('(:)) b) $ map (dataToPatQ (mkQ Nothing trans)) fs
-    trans (Var str) | isFree str = Just $ varP $ mkName str
+    trans (Var xs str) | isFree str = Just $ varP $ mkName str
+    trans (Forall v f) | isFree v = Just $ conP 'Forall [varP (mkName v), dataToPatQ (mkQ Nothing anti)f]
+    trans (Exists v f) | isFree v = Just $ conP 'Forall [varP (mkName v), dataToPatQ (mkQ Nothing anti)f]
     trans _ = Nothing
 
 seqs :: QuasiQuoter
@@ -46,13 +52,13 @@ seqsExp str = dataToExpQ (mkQ Nothing anti) $ run (sequent `sepBy` spaces) str
   where
     anti :: [Formula] -> Maybe ExpQ
     anti gs = Just [| concat $(listE $ map (appE [| toFormulaList |] . dataToExpQ (mkQ Nothing trans)) gs) |]
-    trans (Var s) | isFree s = Just $ varE (mkName s)
+    trans (Var xs s) | isFree s = Just $ varE (mkName s)
     trans _ = Nothing
 seqsPat str = dataToPatQ (mkQ Nothing anti) $ run (sequent `sepBy` spaces) str
   where
     anti :: [Formula] -> Maybe PatQ
     anti fs = Just $ foldr1 (\a b -> infixP a ('(:)) b) $ map (dataToPatQ (mkQ Nothing trans)) fs
-    trans (Var str) | isFree str = Just $ varP $ mkName str
+    trans (Var xs str) | isFree str = Just $ varP $ mkName str
     trans _ = Nothing
 
 lkf :: QuasiQuoter
@@ -75,21 +81,31 @@ rule = QuasiQuoter { quoteType = undefined
 mkHList :: [TypeQ] -> TypeQ
 mkHList = foldr (appT . appT (conT '(:))) (conT '[]) -- for GHC 7.4.*
 
+toTeX :: String -> String
+toTeX (break isUpper -> (hdr, rest)) = proc hdr ++ rest
+  where
+    proc "and" = "$\\wedge$-"
+    proc "or" = "$\\vee$-"
+    proc "not" = "$\\neg$-"
+    proc "impl" = "$\\to$-"
+    proc (c:st) = toUpper c : st
+    proc str    = str
+
 ruleDec :: String -> Q [Dec]
 ruleDec str = do
   let rules = run (many1 deducRule) str
   concat <$> mapM mkRule rules
   where
     mkRule (from, ruleName, to) = do
-      (appTypes, app) <- build from "app" [to]
-      (unappTypes, unApp) <- build [to] "unApp" from
+      (appTypes, app) <- build ruleName from "app" [to]
+      (unappTypes, unApp) <- build ruleName [to] "unApp" from
       let name = mkName ruleName
       sig <- sigD name [t| Rule $(mkHList appTypes) $(mkHList unappTypes) |]
-      fun <- funD name [ clause [] (normalB [| Rule $(litE $ stringL ruleName) $(varE $ mkName "app") $(varE $ mkName "unApp") |])
+      fun <- funD name [ clause [] (normalB [| Rule $(litE $ stringL $ toTeX ruleName) (toNAry $(varE $ mkName "app")) (toNAry $(varE $ mkName "unApp")) |])
                                 [return app, return unApp]]
       return [sig, fun]
     arrow a b = [t| $(a) -> $(b) |]
-    build from name to = do
+    build rName from name to = do
       (types, is, pattern, guards) <- compilePattern from
       body    <- dataToExpQ (mkQ Nothing expq) to
       let pnames = nub $ everything (++) (mkQ [] extractName) from
@@ -99,35 +115,35 @@ ruleDec str = do
       funApp <- funD (mkName name) [ clause (map varP unknown++map (conP 'Index . pure . varP) is ++[pattern])
                                              (guardedB [liftM2 (,) (patG guards) $ return body])
                                              []
-                                , clause (wildP:map (const wildP) (unknown ++is)) (normalB [| [] |]) []
-                                ]
+                                   , clause (wildP:map (const wildP) (unknown ++is)) (normalB [| [] |]) []
+                                   ]
       return (ts, funApp)
     expq :: [Formula] -> Maybe ExpQ
     expq gs = Just $ [| concat $(listE $ map trans gs) |]
-    trans s@(Var str) | isBlock s = fromJust $ simplTrans s
-                      | otherwise = listE [ fromJust $ simplTrans s ]
+    trans s@(Var xs str) | isBlock s = fromJust $ simplTrans s
+                         | otherwise = listE [ fromJust $ simplTrans s ]
     trans v = listE [dataToExpQ (mkQ Nothing simplTrans) v]
-    simplTrans (Var s) = Just $ varE $ mkName $ normalizeName s
+    simplTrans (Var vvs s) = Just $ varE $ mkName $ normalizeName s
     simplTrans _       = Nothing
     normalizeName xs = map toLower xs
-    extractName (Var v) = [normalizeName v]
+    extractName (Var vvs v) = map normalizeName (v : vvs)
     extractName _       = []
-    renamer (Var name) = do
+    renamer (Var vvs name) = do
       dic <- get
       case M.lookup name dic of
         Nothing -> do
           put $ M.insert name [name] dic
-          return $ Var name
+          return $ Var vvs name
         Just xs -> do
           name' <- show <$> lift (newName name)
           put $ M.insert name (name' : xs) dic
-          return $ Var name'
+          return $ Var vvs name'
 
 (~=~) :: Formula -> Formula -> Bool
 a ~=~ b = not (isBlock a) && not (isBlock b)
 
-isBlock (Var (a:_)) = isGreek a
-isBlock _           = False
+isBlock (Var xs (a:_)) = isGreek a
+isBlock _              = False
 
 allEq :: Eq a => [a] -> Bool
 allEq xs = and $ zipWith (==) xs $ tail xs
@@ -163,7 +179,7 @@ extractFromFormulae fs = do
       return (is, varP arg, stmts)
   where
     normalizeName = map toLower
-    trans var (Var str) = Just $ var $ mkName $ normalizeName str
+    trans var (Var [] str) = Just $ var $ mkName $ normalizeName str
     trans _ _ = Nothing
     toPatQ :: Data a => a -> PatQ
     toPatQ = dataToPatQ (mkQ Nothing $ trans varP)
@@ -172,20 +188,20 @@ extractFromFormulae fs = do
       if isBlock (head c')
         then return ([bindS (toPatQ $ head c') (varE name)], [])
         else return ([bindS (toPatQ c') (varE name)], [])
-    buildGuards (c:cs) name | [Var c'] <- c, isBlock (Var c') = do
+    buildGuards (c:cs) name | [Var vvvs c'] <- c, isBlock (Var vvvs c') = do
       rest <- lift $ newName "rs"
       dic <- get
       case M.lookup c' dic of
         Nothing -> do
           ind  <- lift $ newName "i"
           put $ M.insert c' (Just ind, [c']) dic
-          let bind = bindS (tupP [ toPatQ (Var c'), varP rest ]) [| splitAt $(varE ind) $(varE name) |]
+          let bind = bindS (tupP [ toPatQ (Var [] c'), varP rest ]) [| splitAt $(varE ind) $(varE name) |]
           (gd, is) <- buildGuards cs rest
           return (bind:gd, ind:is)
         Just (Just ind, xs) -> do
           c'' <- show <$> lift (newName c')
           put $ M.insert c' (Just ind, (c'' : xs)) dic
-          let bind = bindS (tupP [ toPatQ (Var c'), varP rest ]) [| splitAt $(varE ind) $(varE name) |]
+          let bind = bindS (tupP [ toPatQ (Var [] c'), varP rest ]) [| splitAt $(varE ind) $(varE name) |]
           (gd, is) <- buildGuards cs rest
           return (bind:gd, is)
     buildGuards (c:cs) name = do
@@ -195,14 +211,14 @@ extractFromFormulae fs = do
           bind = bindS (foldr cons (varP rest) $ map toPatQ c') (varE name)
       (gd, is) <- buildGuards cs rest
       return (bind:gd, is)
-    renamer (Var (normalizeName -> name)) = do
+    renamer (Var (map normalizeName -> vs) (normalizeName -> name)) = do
       dic <- get
       case M.lookup name dic of
         Nothing -> do
           put $ M.insert name (Nothing, [name]) dic
-          return $ Var name
+          return $ Var vs name
         Just (_, xs) -> do
           name' <- show <$> lift (newName name)
           put $ M.insert name (Nothing, name' : xs) dic
-          return $ Var name'
+          return $ Var vs name'
     renamer a = return a

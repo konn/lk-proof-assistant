@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts, UndecidableInstances, MultiParamTypeClasses #-}
-{-# LANGUAGE DeriveDataTypeable, RecordWildCards, FlexibleInstances #-}
-{-# LANGUAGE GADTs, TypeOperators, EmptyDataDecls, TypeFamilies #-}
-{-# LANGUAGE DataKinds, PolyKinds, ScopedTypeVariables #-}
+{-# LANGUAGE DeriveDataTypeable, RecordWildCards, FlexibleInstances, TupleSections#-}
+{-# LANGUAGE GADTs, TypeOperators, EmptyDataDecls, TypeFamilies, ConstraintKinds #-}
+{-# LANGUAGE DataKinds, PolyKinds, ScopedTypeVariables, TemplateHaskell #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module SequentTypes where
 import Text.Parsec.Expr
@@ -10,113 +10,141 @@ import qualified Text.Parsec.Token as T
 import Text.Parsec.String
 import Data.List
 import Control.Applicative hiding (many, (<|>))
-import Data.List
 import Data.Char
-import Data.Data (Typeable, Data)
+import Data.Generics hiding (Fixity(..), empty)
+import Data.Generics.Uniplate.Direct
+
+import NAry
 
 infix  6 :|-
 infixr 7 :->:
 infixl 8 :\/:
 infixl 9 :/\:
 
-data Formula = Var String
+data Formula = Var [String] String
              | Not Formula
              | Formula :\/: Formula
              | Formula :->: Formula
              | Formula :/\: Formula
+             | Forall String Formula
+             | Exists String Formula
                deriving (Read, Eq, Ord, Data, Typeable)
+
+replace :: Eq a => a -> a -> a -> a
+replace old new a | a == old  = new
+                  | otherwise = a
+
+isFreeIn :: String -> Formula -> Bool
+isFreeIn x (Var vs v)   = x `elem` (v:vs)
+isFreeIn x (Forall v f) = if x == v then False else x `isFreeIn` f
+isFreeIn x (Exists v f) = if x == v then False else x `isFreeIn` f
+isFreeIn x f            = any (isFreeIn x) $ children f
+
+replaceFreeVarWith :: String -> String -> Formula -> Formula
+replaceFreeVarWith old new (Var vs v) =
+    let v' = if v == old then new else v
+    in Var (map (replace old new) vs) v'
+replaceFreeVarWith old _ f@(Forall v _)
+    | v == old = f
+replaceFreeVarWith old _ f@(Exists v _)
+    | v == old = f
+replaceFreeVarWith old new f = descend (replaceFreeVarWith old new) f
 
 data Sequent = (:|-) { lefts :: [Formula], rights :: [Formula] }
              deriving (Eq, Ord, Data, Typeable)
 
--- For GHC 7.4.*
-type family   (:~>) (a :: [*]) (f :: *)
-type instance '[] :~> f = f
-type instance (a ': b) :~> f = a -> b :~> f
+instance Uniplate Sequent where
+  {-# INLINE uniplate #-}
+  uniplate x = plate x
+ 
+instance Uniplate Formula where
+  {-# INLINE uniplate #-}
+  uniplate (Not x1) = plate Not |* x1
+  uniplate ((:\/:) x1 x2) = plate (:\/:) |* x1 |* x2
+  uniplate ((:->:) x1 x2) = plate (:->:) |* x1 |* x2
+  uniplate ((:/\:) x1 x2) = plate (:/\:) |* x1 |* x2
+  uniplate (Forall x1 x2) = plate (Forall x1) |* x2
+  uniplate (Exists x1 x2) = plate (Exists x1) |* x2
+  uniplate x = plate x
+ 
+instance Biplate Formula String where
+  {-# INLINE biplate #-}
+  biplate (Var xs x1)    = plate Var ||* xs |* x1
+  biplate (Not x1)       = plate Not |+ x1
+  biplate ((:\/:) x1 x2) = plate (:\/:) |+ x1 |+ x2
+  biplate ((:->:) x1 x2) = plate (:->:) |+ x1 |+ x2
+  biplate ((:/\:) x1 x2) = plate (:/\:) |+ x1 |+ x2
+  biplate (Forall x1 x2) = plate Forall |* x1 |+ x2
+  biplate (Exists x1 x2) = plate Exists |* x1 |+ x2
 
-infixr :~>
+instance Biplate Sequent String where
+  {-# INLINE biplate #-}
+  biplate ((:|-) x1 x2) = plate (:|-) ||+ x1 ||+ x2
+
+instance Biplate Sequent Formula where
+  {-# INLINE biplate #-}
+  biplate ((:|-) x1 x2) = plate (:|-) ||* x1 ||* x2
+
 data Rule :: [*] -> [*] -> * where
   Rule :: { ruleName :: String
-          , apply   :: as :~> ([Sequent] -> [Sequent])
-          , unapply  :: bs :~> ([Sequent] -> [Sequent])}
+          , apply    :: NAry as ([Sequent] -> [Sequent])
+          , unapply  :: NAry bs ([Sequent] -> [Sequent])}
        -> Rule as bs
+
+attach :: a -> (b -> c) -> b -> (c, a)
+attach a f = (,a) . f
+
+unapply' :: Rule as bs -> (bs :~> ([Sequent] -> ([Sequent], String)))
+unapply' (Rule n _ f) = sub n f
+  where
+    sub :: String -> NAry xs (a -> b) -> (xs :~> (a -> (b, String)))
+    sub n (Arg g)   = sub n . g
+    sub n (Value e) = attach n e
+
+inverseArity :: forall as bs. SingList bs => Rule as bs -> Int
+inverseArity _ = len (slist :: SList bs)
+  where
+    len :: SList x -> Int
+    len SNil = 0
+    len (SCons _ xs) = 1 + len xs
+
+data SomeRule = forall as bs. SomeRule (Rule as bs)
 
 instance Show (Rule a b) where
   show (Rule name _ _) = "<" ++ name ++ ">"
 
 instance Show Formula where
-  showsPrec _ (Var v)    = showString v
-  showsPrec d (Not f)    = showString "¬" . showsPrec 11 f
-  showsPrec d (l :\/: r) = showParen (d > 7) $ showsPrec 8 l . showString " ∨ " . showsPrec 8 r
-  showsPrec d (l :->: r) = showParen (d > 6) $ showsPrec 7 l . showString " → " . showsPrec 7 r
-  showsPrec d (l :/\: r) = showParen (d > 8) $ showsPrec 9 l . showString " ∧ " . showsPrec 9 r
+  showsPrec _ (Var [] v)    = showString v
+  showsPrec _ (Var as v)    = showString v . showParen True (showString (intercalate ", " as))
+  showsPrec _ (Not f)       = showString "¬" . showsPrec 11 f
+  showsPrec d (l :\/: r)    = showParen (d > 7) $ showsPrec 8 l . showString " ∨ " . showsPrec 8 r
+  showsPrec d (l :->: r)    = showParen (d > 6) $ showsPrec 7 l . showString " → " . showsPrec 7 r
+  showsPrec d (l :/\: r)    = showParen (d > 8) $ showsPrec 9 l . showString " ∧ " . showsPrec 9 r
+  showsPrec d (Forall v f)  = showParen (d > 9) $ showString "∀" . showString v . showString ". " . showsPrec 11 f
+  showsPrec d (Exists v f)  = showParen (d > 9) $ showString "∃" . showString v . showString ". " . showsPrec 11 f
 
 instance Show Sequent where
   showsPrec d (l :|- r) = showParen (d > 10) $ showsFs l . showString " |- " . showsFs (reverse r)
     where
       showsFs fs = foldr (.) id $ intersperse (showString ", ") $ map shows fs
 
+isGreek :: Char -> Bool
 isGreek = (`elem` (letters ++ map toLower letters))
   where
     letters = "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΞΨΩ"
+
+greek :: Parser Char
 greek = satisfy isGreek
 
-data Nat = Z | S Nat
+unapplyList ::(All RuleArgument bs)
+            => Rule as bs -> [String] -> [Sequent] -> Maybe ([Sequent] -> ([Sequent], String))
+unapplyList (Rule n _ f) xs ss =
+  attach n <$> applyStringList (Proxy :: Proxy RuleArgument) (toArg ss) f xs
 
-data Vector a len where
-  VNil  :: Vector a Z
-  VCons :: a -> Vector a n -> Vector a (S n)
-
-class ListToVector len where
-  listToVector :: [a] -> Maybe (Vector a len)
-
-instance ListToVector Z where
-  listToVector [] = Just VNil
-  listToVector _  = Nothing
-
-instance ListToVector n => ListToVector (S n) where
-  listToVector (x:xs) = VCons x <$> (listToVector xs)
-  listToVector []     = Nothing
-
-class (List len ~ xs) => ApplyVec len xs where
-  type List (len :: Nat) :: [*]
-  applyVec :: (xs :~> a) -> [Sequent] -> Vector String len -> Maybe a
-
-instance ApplyVec Z '[] where
-  type List Z = '[]
-  applyVec f _ VNil = Just f
-
-instance (RuleArgument x, ApplyVec len xs) => ApplyVec (S len) (x ': xs) where
-  type List (S len) = List (S len)
-  applyVec f s (VCons x xs) =
-      case f <$> toArg s x of
-        Just f' -> applyVec f' s xs
-        Nothing -> Nothing
-
-unapplyList :: (ListToVector (Length b), ApplyVec (Length b) b)
-            => Rule a b -> [String] -> [Sequent] -> Maybe ([Sequent] -> [Sequent])
-unapplyList (Rule _ _ f :: Rule as bs) xs ss =
-    applyVec f ss =<< (listToVector xs :: Maybe (Vector String (Length bs)))
-
-applyList :: (ListToVector (Length as), ApplyVec (Length as) as)
-          => Rule as b -> [String] -> [Sequent] -> Maybe ([Sequent] -> [Sequent])
-applyList (Rule _ f _ :: Rule as bs) xs ss =
-    applyVec f ss =<< (listToVector xs :: Maybe (Vector String (Length as)))
-
-data Proxy a = Proxy
-
-class ToInt (a :: Nat) where
-  toInt :: Proxy a -> Int
-
-instance ToInt 'Z where
-  toInt _ = 0
-
-instance ToInt n => ToInt ('S n) where
-  toInt Proxy = toInt (Proxy :: Proxy n) + 1
-
-type family   Length (as :: [*]) :: Nat
-type instance Length '[] = Z
-type instance Length (a ': as) = S (Length as)
+applyList :: (All RuleArgument as)
+          => Rule as bs -> [String] -> [Sequent] -> Maybe ([Sequent] -> ([Sequent], String))
+applyList (Rule n f _ :: Rule as bs) xs ss =
+  attach n <$> applyStringList (Proxy :: Proxy RuleArgument) (toArg ss) f xs
 
 data Index (nth :: Nat) (side :: Side) = Index { runIndex :: Int }
 data Side = LHS | RHS
@@ -153,6 +181,9 @@ instance ToInt n => RuleArgument (Index n RHS) where
 instance RuleArgument Formula where
   toArg _ str = either (const Nothing) Just $ parse formula "" str
 
+instance RuleArgument String where
+  toArg _ str = Just str
+
 lang :: T.LanguageDef ()
 lang = T.LanguageDef { T.commentStart = "{-"
                      , T.commentEnd   = "-}"
@@ -172,16 +203,27 @@ lang = T.LanguageDef { T.commentStart = "{-"
 T.TokenParser {..} = T.makeTokenParser lang
 
 formula :: Parser Formula
-formula = buildExpressionParser table term
-      <?> "formula"
+formula = Forall <$  choice (map reservedOp ["forall", "∀"])
+                 <*> lexeme identifier
+                 <*  lexeme (char '.')
+                 <*> formula
+      <|> Exists <$  choice (map reservedOp ["exists", "∃"])
+                 <*> lexeme identifier
+                 <*  lexeme (char '.')
+                 <*> formula
+      <|> buildExpressionParser table term
+  <?> "formula"
 
+term :: Parser Formula
 term = parens formula
-   <|> Var <$> identifier
+   <|> try (flip Var <$> identifier
+                     <*> parens (identifier `sepBy1` comma))
+   <|> Var [] <$> identifier
 
-table = [ [ Prefix $ Not   <$ choice (map reservedOp ["~", "¬"])]
-        , [ Infix  ((:/\:) <$ choice (map reservedOp ["∧", "/\\", "^"])) AssocLeft ]
-        , [ Infix  ((:\/:) <$ choice (map reservedOp ["∨", "\\/", "v"])) AssocLeft ]
-        , [ Infix  ((:->:) <$ choice (map reservedOp ["→", "->", "⊃"])) AssocRight ]
+table = [ [ Prefix $ Not    <$ choice (map reservedOp ["~", "¬"])]
+        , [ Infix  ((:/\:)  <$ choice (map reservedOp ["∧", "/\\", "^"])) AssocLeft ]
+        , [ Infix  ((:\/:)  <$ choice (map reservedOp ["∨", "\\/", "v"])) AssocLeft ]
+        , [ Infix  ((:->:)  <$ choice (map reservedOp ["→", "->", "⊃"])) AssocRight ]
         ]
 
 sequent = (:|-) <$> fs <* (choice $ map reservedOp ["|-", "├"])
