@@ -128,13 +128,20 @@ instance Show Sequent where
     where
       showsFs fs = foldr (.) id $ intersperse (showString ", ") $ map shows fs
 
-isGreek :: Char -> Bool
-isGreek = (`elem` (letters ++ map toLower letters))
+isGreek x = isCapitalGreek x || isSmallGreek x
+
+isCapitalGreek :: Char -> Bool
+isCapitalGreek = (`elem` letters)
   where
     letters = "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΞΨΩ"
 
+isSmallGreek :: Char -> Bool
+isSmallGreek = (`elem` letters)
+  where
+    letters = map toLower "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΞΨΩ"
+
 greek :: Parser Char
-greek = satisfy isGreek
+greek = satisfy isCapitalGreek
 
 unapplyList ::(All RuleArgument bs)
             => Rule as bs -> [String] -> [Sequent] -> Maybe ([Sequent] -> ([Sequent], String))
@@ -194,7 +201,8 @@ lang = T.LanguageDef { T.commentStart = "{-"
                      , T.opStart        = empty
                      , T.opLetter       = empty
                      , T.reservedNames  = []
-                     , T.reservedOpNames = ["~", "->", "\\/", "/\\", "⊃", "|-"
+                     , T.reservedOpNames = ["~", "<->", "forall", "exists", "∀", "∃", "⇔"
+                                           , "->", "\\/", "/\\", "⊃", "|-"
                                            ,"¬", "→", "∧", "∨", "^", "v", "├"
                                            ]
                      , T.caseSensitive   = True
@@ -223,8 +231,12 @@ term = parens formula
 table = [ [ Prefix $ Not    <$ choice (map reservedOp ["~", "¬"])]
         , [ Infix  ((:/\:)  <$ choice (map reservedOp ["∧", "/\\", "^"])) AssocLeft ]
         , [ Infix  ((:\/:)  <$ choice (map reservedOp ["∨", "\\/", "v"])) AssocLeft ]
-        , [ Infix  ((:->:)  <$ choice (map reservedOp ["→", "->", "⊃"])) AssocRight ]
+        , [ Infix  ((:->:)  <$ choice (map reservedOp ["→", "->", "⊃"])) AssocRight]
+        , [ Infix  (iff <$ choice (map reservedOp ["⇔", "<->"])) AssocRight ]
         ]
+
+iff :: Formula -> Formula -> Formula
+iff l r = (l :->: r) :/\: (r :->: l)
 
 sequent = (:|-) <$> fs <* (choice $ map reservedOp ["|-", "├"])
                 <*> (reverse <$> fs)

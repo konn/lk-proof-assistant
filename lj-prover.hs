@@ -9,7 +9,7 @@ import           Control.Monad.CC
 import           Control.Monad.Writer
 import qualified Data.Text              as T
 import qualified Data.Text.IO           as T
-import           LKRules
+import           LJRules
 import           ProofTree
 import           SequentMacros
 import           SequentTypes
@@ -66,9 +66,8 @@ buildProof fm p = do
               [":a"] -> abort p $ return Abort
               ("cut":args) -> return $ unapplyList cut args [fm]
               ("permutationL":args) -> return $ unapplyList permutationL args [fm]
-              ("permutationR":rest) -> return $ unapplyList permutationR rest [fm]
               ("contractL":rest)    -> return $ unapplyList contractL rest [fm]
-              ("contractR":_) -> return $ Just $ unapply' contractR
+              ("contract":rest)    -> return $ unapplyList contractL rest [fm]
               ("weakenL":_) -> return $ Just $ unapply' weakenL
               ("weakenR":_) -> return $ Just $ unapply' weakenR
               ("andRight":args)

@@ -145,6 +145,9 @@ a ~=~ b = not (isBlock a) && not (isBlock b)
 isBlock (Var xs (a:_)) = isGreek a
 isBlock _              = False
 
+isIntuitionistic (Var xs (a:_)) = isSmallGreek a
+isIntuitionistic _              = False
+
 allEq :: Eq a => [a] -> Bool
 allEq xs = and $ zipWith (==) xs $ tail xs
 

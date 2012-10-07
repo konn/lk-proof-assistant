@@ -25,20 +25,31 @@ data Tree a = NullaryInf { label :: Maybe String, child :: a }
 axiomC :: LaTeXC l => l -> l
 axiomC = liftL $ \l -> TeXComm "AxiomC" [FixArg l]
 
+axiom :: LaTeXC l => l -> l
+axiom = liftL $ \l -> TeXCommS "Axiom" <> l
+
 smallcaps :: LaTeXC l => l -> l
 smallcaps = liftL $ \l -> TeXComm "sc" [FixArg l]
 
-binaryInf :: LaTeXC l => l -> l
-binaryInf = liftL $ \l -> TeXComm "BinaryInfC" [FixArg l]
+binaryInfC :: LaTeXC l => l -> l
+binaryInfC = liftL $ \l -> TeXComm "BinaryInfC" [FixArg l]
 
-unaryInf :: LaTeXC l => l -> l
-unaryInf = liftL $ \l -> TeXComm "UnaryInfC" [FixArg l]
+unaryInfC :: LaTeXC l => l -> l
+unaryInfC = liftL $ \l -> TeXComm "UnaryInfC" [FixArg l]
+
+binaryInf :: Bool -> LaTeX -> LaTeX
+binaryInf False = binaryInfC
+binaryInf True  = liftL $ \l -> TeXCommS "BinaryInf" <> l
+
+unaryInf :: Bool -> LaTeX -> LaTeX
+unaryInf False = unaryInfC
+unaryInf True  = liftL $ \l -> TeXCommS "UnaryInf" <> l
 
 rightLabel :: String -> LaTeX
 rightLabel l = TeXComm "RightLabel" [FixArg $ scriptsize $ smallcaps $ raw $ T.pack l]
 
 sequentToLaTeX :: LaTeXC l => Sequent -> l
-sequentToLaTeX (fs :|- gs) = math $ lhs <> comm0 "vdash" <> rhs
+sequentToLaTeX (fs :|- gs) = math $ lhs <> comm0 "fCenter" <> rhs
   where
     mkFs = mconcat . intersperse ", " . map formulaToLaTeX
     lhs = mkFs fs
@@ -54,8 +65,8 @@ formulaToLaTeX = ftxPrec 0
     ftxPrec d (l :\/: r)        = parenPrec (d > 7) $ mconcat [ftxPrec 8 l, comm0 "vee", ftxPrec 8 r]
     ftxPrec d (l :->: r)        = parenPrec (d > 6) $ mconcat [ftxPrec 7 l, comm0 "to", ftxPrec 7 r]
     ftxPrec d (l :/\: r)        = parenPrec (d > 8) $ mconcat [ftxPrec 9 l, comm0 "wedge", ftxPrec 9 r]
-    ftxPrec d (Forall v f)      = parenPrec (d > 9) $ mconcat [comm0 "forall", renderVar v, ", ", ftxPrec 11 f]
-    ftxPrec d (Exists v f)      = parenPrec (d > 9) $ mconcat [comm0 "exists", renderVar v, ", ", ftxPrec 11 f]
+    ftxPrec d (Forall v f)      = parenPrec (d > 9) $ mconcat [comm0 "forall", renderVar v, ftxPrec 11 f]
+    ftxPrec d (Exists v f)      = parenPrec (d > 9) $ mconcat [comm0 "exists", renderVar v, ftxPrec 11 f]
 
 parenPrec :: LaTeXC l => Bool -> l -> l
 parenPrec True = paren
@@ -97,11 +108,14 @@ renderVar var = fromMaybe (fromString var) $ lookup var dic
           ,("Φ", phiu), ("Χ", "X"), ("Ψ", psiu), ("Ω", omegau)
           ]
 
-treeToLaTeX :: Tree Sequent -> LaTeX
-treeToLaTeX (NullaryInf ml a)      = axiomC "" <> maybe "" (rightLabel . fromString) ml
-                                     <> unaryInf (sequentToLaTeX a)
-treeToLaTeX (UnaryInf ml tree a)   = treeToLaTeX tree <> maybe "" (rightLabel . fromString) ml
-                                     <> unaryInf (sequentToLaTeX a)
-treeToLaTeX (BinaryInf ml t1 t2 a) = treeToLaTeX t1 <> treeToLaTeX t2
-                                       <> maybe "" (rightLabel . fromString) ml
-                                       <> binaryInf (sequentToLaTeX a)
+treeToLaTeX :: Bool -> Tree Sequent -> LaTeX
+treeToLaTeX c tr = TeXCommS "def" <> TeXComm "fCenter" [FixArg $ TeXCommS " " <> comm0 "vdash" <> TeXCommS " "]
+                      <> body tr <> TeXCommS "DisplayProof"
+  where
+    body (NullaryInf ml a)      = axiomC "" <> maybe "" (rightLabel . fromString) ml
+                                  <> unaryInf c (sequentToLaTeX a)
+    body (UnaryInf ml tree a)   = body tree <> maybe "" (rightLabel . fromString) ml
+                                  <> unaryInf c (sequentToLaTeX a)
+    body (BinaryInf ml t1 t2 a) = body t1 <> body t2
+                                  <> maybe "" (rightLabel . fromString) ml
+                                  <> binaryInf c (sequentToLaTeX a)

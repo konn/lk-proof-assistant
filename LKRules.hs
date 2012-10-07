@@ -93,8 +93,9 @@ anyLeft = Rule "$\\forall$-Left" (toNAry app) (toNAry unapp)
     app old new [(f : gs) :|- ds] =
         [ (Forall new (replaceFreeVarWith old new f) : gs) :|- ds]
     app _ _ _ = []
-    unapp new [(Forall x f : gs) :|- ds] =
-        [ (replaceFreeVarWith x new f : gs) :|- ds]
+    unapp new [(Forall x f : gs) :|- ds]
+      | let orig = replaceFreeVarWith x new f
+      , replaceFreeVarWith new x orig == f = [ (orig : gs) :|- ds]
     unapp _ _ = []
 
 anyRight :: Rule '[String, String] '[String]
@@ -106,6 +107,8 @@ anyRight = Rule "$\\forall$-Left" (toNAry app) (toNAry unapp)
     app _ _ _ = []
     unapp new [ gs :|- (Forall x f : ds)]
         | not (any (new `isFreeIn`) (Forall x f : gs ++ ds))
+        , let orig = replaceFreeVarWith x new f
+        , replaceFreeVarWith new x orig == f
         = [ gs :|- (replaceFreeVarWith x new f : ds)]
     unapp _ _ = []
 
@@ -115,8 +118,10 @@ existsRight = Rule "$\\exists$-Right" (toNAry app) (toNAry unapp)
     app old new [gs :|- (f : ds)] =
         [ gs :|- (Exists new (replaceFreeVarWith old new f) : ds)]
     app _ _ _ = []
-    unapp new [gs :|- (Exists x f : ds)] =
-        [ gs :|- (replaceFreeVarWith x new f : ds)]
+    unapp new [gs :|- (Exists x f : ds)]
+        | let orig = replaceFreeVarWith x new f
+        , replaceFreeVarWith new x orig == f =
+        [ gs :|- (orig : ds)]
     unapp _ _ = []
 
 existsLeft :: Rule '[String, String] '[String]
@@ -128,5 +133,7 @@ existsLeft = Rule "$\\exists$-Left" (toNAry app) (toNAry unapp)
     app _ _ _ = []
     unapp new [ (Exists x f : gs) :|- ds ]
         | not (any (new `isFreeIn`) (Exists x f : gs ++ ds))
+        , let orig = replaceFreeVarWith x new f
+        , replaceFreeVarWith new x orig == f
         = [ (replaceFreeVarWith x new f : gs) :|- ds]
     unapp _ _ = []
