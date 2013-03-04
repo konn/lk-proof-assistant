@@ -87,7 +87,7 @@ anyLeft = Rule "$\\forall$-Left" (toNAry app) (toNAry unapp)
     app _ _ _ = []
     unapp new [(Forall x f : gs) :|- ds]
       | let orig = replaceFreeVarWith x new f
-      , replaceFreeVarWith new x orig == f = [ (orig : gs) :|- ds]
+      = [ (orig : gs) :|- ds]
     unapp _ _ = []
 
 anyRight :: Rule '[String, String] '[String]
@@ -112,8 +112,7 @@ existsRight = Rule "$\\exists$-Right" (toNAry app) (toNAry unapp)
     app _ _ _ = []
     unapp new [gs :|- (Exists x f : ds)]
         | let orig = replaceFreeVarWith x new f
-        , replaceFreeVarWith new x orig == f =
-        [ gs :|- (orig : ds)]
+        = [ gs :|- (orig : ds)]
     unapp _ _ = []
 
 existsLeft :: Rule '[String, String] '[String]

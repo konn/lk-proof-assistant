@@ -3,11 +3,12 @@
 module ProofTree where
 import           Data.List
 import           Data.Maybe
-import qualified Data.Text              as T
+import qualified Data.Text               as T
 import           SequentTypes
 import           Text.LaTeX
 import           Text.LaTeX.Base.Class
 import           Text.LaTeX.Base.Syntax
+import           Text.LaTeX.Packages.AMSMath
 
 default (Int)
 

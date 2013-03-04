@@ -34,6 +34,37 @@ replace :: Eq a => a -> a -> a -> a
 replace old new a | a == old  = new
                   | otherwise = a
 
+isVar :: Formula -> Bool
+isVar (Var _ _) = True
+isVar _         = False
+
+isOr :: Formula -> Bool
+isOr (_ :\/: _)  = True
+isOr _           = False
+
+isAnd :: Formula -> Bool
+isAnd (_ :/\: _)  = True
+isAnd _           = False
+
+isNot :: Formula -> Bool
+isNot (Not _)  = True
+isNot _           = False
+
+isImpl :: Formula -> Bool
+isImpl (_ :->: _)  = True
+isImpl _           = False
+
+isExists :: Formula -> Bool
+isExists (Exists _ _)  = True
+isExists _             = False
+
+isForall :: Formula -> Bool
+isForall (Forall _ _)  = True
+isForall _             = False
+
+isQuantifier :: Formula -> Bool
+isQuantifier x = isForall x || isExists x
+
 isFreeIn :: String -> Formula -> Bool
 isFreeIn x (Var vs v)   = x `elem` (v:vs)
 isFreeIn x (Forall v f) = if x == v then False else x `isFreeIn` f
@@ -238,12 +269,16 @@ table = [ [ Prefix $ Not    <$ choice (map reservedOp ["~", "¬"])]
 iff :: Formula -> Formula -> Formula
 iff l r = (l :->: r) :/\: (r :->: l)
 
+sequent :: Parser Sequent
 sequent = (:|-) <$> fs <* (choice $ map reservedOp ["|-", "├"])
                 <*> (reverse <$> fs)
   where
     fs = formula `sepBy` comma
 
+parseSequent :: String -> Sequent
 parseSequent = run sequent
+
+parseFormula :: String -> Formula
 parseFormula = run formula
 
 run p src =
