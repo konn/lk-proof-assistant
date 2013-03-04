@@ -3,19 +3,22 @@ module Main where
 import           Control.Applicative
 import           Data.Generics.Uniplate.Operations
 import           Data.List
+import qualified Data.Text                         as T
+import qualified Data.Text.Encoding                         as T
 import qualified Data.Text.IO                      as T
 import           ProofTree
 import           SequentMacros
 import           SequentTypes
 import           Text.LaTeX
+import qualified Data.ByteString.Char8 as BS
 
 main :: IO ()
 main = do
-  seq <- parseFormula <$> getLine
-  if any isQuantifier $ universe seq
+  f <- parseFormula . T.unpack . T.decodeUtf8 <$> BS.getLine
+  if any isQuantifier $ universe f
   then error "メイダイ ロンリ シカ ワカリマセン．．．"
-  else case prove seq of
-         Nothing   -> putStrLn "Not provable."
+  else case prove f of
+         Nothing   -> error "Not provable."
          Just tree -> do
            T.putStrLn $ render $ treeToLaTeX True tree
 
